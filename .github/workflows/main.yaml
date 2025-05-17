@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "*/15 * * * *"
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -85,4 +87,5 @@ jobs:
           git commit -m "Update DNS data" -a
           git push "https://${GITHUB_ACTOR}:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:${GITHUB_REF} --follow-tags
         fi
+
 

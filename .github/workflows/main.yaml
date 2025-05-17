@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  build:
+    env:
+      TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: golang:1.20-alpine3.18
+    steps:
+    - uses: actions/checkout@master
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    - name: Install necessary tools
+      run: apk add --no-cache curl git
+    - name: Get dnscheck
+      run: go install github.com/dogasantos/dnscheck/cmd/dnscheck@latest
+    - name: Fetch initial resolver list
+      run: |
+        curl -s https://public-dns.info/nameservers.txt >> initial_resolvers.txt
+        curl -s https://raw.githubusercontent.com/blechschmidt/massdns/master/lists/resolvers.txt >> initial_resolvers.txt
+        sort -u initial_resolvers.txt -o initial_resolvers.txt
+        echo "Initial list of resolvers fetched and deduplicated."
+    - name: Run iterative dnscheck
+      run: |
+        #!/bin/bash
+
+        # Initial input file
+        current_input="initial_resolvers.txt"
+        output_prefix="tested_resolvers_"
+        iteration=0
+        previous_line_count=-1
+        current_line_count=0
+
+        echo "Starting iterative dns resolver testing..."
+
+        while [[ "$iteration" -lt 10 ]]; do
+          iteration=$((iteration + 1))
+          output_file="${output_prefix}${iteration}.txt"
+
+          echo "--- Iteration $iteration ---"
+          echo "Running dnscheck on $current_input, output to $output_file"
+          dnscheck -list "$current_input" -output "$output_file"
+
+          if [[ $? -ne 0 ]]; then
+            echo "dnscheck failed in iteration $iteration. Exiting."
+            exit 1
+          fi
+
+          current_line_count=$(wc -l < "$output_file")
+          echo "Number of working resolvers found: $current_line_count"
+
+          if [[ "$current_line_count" -eq "$previous_line_count" ]] && [[ "$iteration" -gt 1 ]]; then
+            echo "Line count is the same as the previous iteration. Assuming stability."
+            mv "$output_file" "resolvers.txt"
+            echo "Final working resolvers list saved to resolvers.txt"
+            exit 0
+          fi
+
+          previous_line_count="$current_line_count"
+          current_input="$output_file"
+        done
+
+        echo "Maximum iterations reached. Moving the result of the last run to resolvers.txt."
+        mv "${output_prefix}10.txt" "resolvers.txt"
+        echo "Final working resolvers list saved to resolvers.txt"
+
+        # Optional: Clean up intermediate files
+        rm -f "${output_prefix}"* initial_resolvers.txt
+    - name: Run DNS Speed Check
+      run: |
+        apk add --no-cache go
+        go build dns_speed_check.go
+        ./dns_speed_check
+    - name: Commit results
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add measurements.txt faster-resolvers.txt resolvers.cleaned
+        if [ $(git status --porcelain=v1 2>/dev/null | wc -l) != "0" ]; then
+          git commit -m "Update DNS data" -a
+          git push "https://${GITHUB_ACTOR}:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:${GITHUB_REF} --follow-tags
+        fi
+

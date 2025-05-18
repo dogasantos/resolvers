@@ -21,6 +21,10 @@ jobs:
       run: apk add --no-cache curl git
     - name: Get dnscheck
       run: go install github.com/dogasantos/dnscheck/cmd/dnscheck@latest
+    - name: Get measurements
+      run: curl https://raw.githubusercontent.com/dogasantos/resolver-mesaure/refs/heads/main/measurements.go > measurements.go 
+      run: go build -o measurements measurements.go
+
     - name: Fetch initial resolver list
       run: |
         curl -s https://public-dns.info/nameservers.txt >> initial_resolvers.txt
@@ -30,7 +34,6 @@ jobs:
     - name: Run iterative dnscheck
       run: |
         #!/bin/bash
-
         # Initial input file
         current_input="initial_resolvers.txt"
         output_prefix="tested_resolvers_"
@@ -46,7 +49,7 @@ jobs:
 
           echo "--- Iteration $iteration ---"
           echo "Running dnscheck on $current_input, output to $output_file"
-          dnscheck -list "$current_input" -output "$output_file"
+          dnscheck -l "$current_input" > "$output_file"
 
           if [[ $? -ne 0 ]]; then
             echo "dnscheck failed in iteration $iteration. Exiting."
@@ -76,16 +79,15 @@ jobs:
     - name: Run DNS Speed Check
       run: |
         apk add --no-cache go
-        go build dns_speed_check.go
-        ./dns_speed_check
+        ./measurements
+        mv resolvers.cleaned resolvers.txt
     - name: Commit results
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add measurements.txt faster-resolvers.txt resolvers.cleaned
+        git add measurements.txt faster-resolvers.txt resolvers.txt
         if [ $(git status --porcelain=v1 2>/dev/null | wc -l) != "0" ]; then
           git commit -m "Update DNS data" -a
           git push "https://${GITHUB_ACTOR}:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:${GITHUB_REF} --follow-tags
         fi
-
 

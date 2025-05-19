@@ -22,7 +22,8 @@ jobs:
     - name: Get dnscheck
       run: go install github.com/dogasantos/dnscheck/cmd/dnscheck@latest
     - name: Get measurements
-      run: curl https://raw.githubusercontent.com/dogasantos/resolver-mesaure/refs/heads/main/measurements.go > measurements.go 
+      run: curl https://raw.githubusercontent.com/dogasantos/resolver-mesaure/refs/heads/main/measurements.go > measurements.go
+    - name: Compile measurements
       run: go build -o measurements measurements.go
 
     - name: Fetch initial resolver list

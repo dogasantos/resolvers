@@ -29,6 +29,13 @@ jobs:
       
     - name: Install dnscheck (with custom modifications)
       run: go install github.com/dogasantos/dnscheck/cmd/dnscheck@latest
+
+    - name: Verify dnscheck installation
+      run: |
+        if ! "$(go env GOPATH)/bin/dnscheck" -h | grep -q -- "-r"; then
+          echo "::error::The installed dnscheck binary does not support the required -r flag. Please ensure you have pushed the modified source code to your repository."
+          exit 1
+        fi
       
     - name: Get measurements
       run: curl https://raw.githubusercontent.com/dogasantos/resolver-mesaure/refs/heads/main/measurements.go > measurements.go

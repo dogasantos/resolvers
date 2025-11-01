@@ -50,7 +50,9 @@ jobs:
     - name: Fetch initial resolver list
       run: |
         curl -s https://raw.githubusercontent.com/blechschmidt/massdns/master/lists/resolvers.txt > initial_resolvers.txt
-        sort -u initial_resolvers.txt -o initial_resolvers.txt
+        curl -s https://raw.githubusercontent.com/trickest/resolvers/refs/heads/main/resolvers.txt >> initial_resolvers.txt
+        cat initial_resolvers.txt |sort|uniq > initial_resolvers.1
+        mv initial_resolvers.1 initial_resolvers.txt
         echo "Initial list of resolvers fetched and deduplicated."
         
     - name: Run fast dnscheck (Optimized)

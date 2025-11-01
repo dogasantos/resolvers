@@ -6,88 +6,80 @@ on:
     - cron: "00 00 * * *"
 permissions:
   contents: write
+  # Need to add 'releases: write' permission for creating a release
+  releases: write
 
 jobs:
   build:
     env:
       TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    runs-on: golang:1.20-alpine3.18
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
+    - uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.20'
+        
     - name: Install necessary tools
-      run: apk add --no-cache curl git
-    - name: Get dnscheck
+      run: sudo apt-get update && sudo apt-get install -y curl git
+      
+    - name: Install dnscheck (with custom modifications)
       run: go install github.com/dogasantos/dnscheck/cmd/dnscheck@latest
+      
     - name: Get measurements
       run: curl https://raw.githubusercontent.com/dogasantos/resolver-mesaure/refs/heads/main/measurements.go > measurements.go
+      
     - name: Compile measurements
       run: go build -o measurements measurements.go
 
     - name: Fetch initial resolver list
       run: |
-        curl -s https://raw.githubusercontent.com/blechschmidt/massdns/master/lists/resolvers.txt >> initial_resolvers.txt
+        curl -s https://raw.githubusercontent.com/blechschmidt/massdns/master/lists/resolvers.txt > initial_resolvers.txt
         sort -u initial_resolvers.txt -o initial_resolvers.txt
         echo "Initial list of resolvers fetched and deduplicated."
-    - name: Run iterative dnscheck
+        
+    - name: Run fast dnscheck (Optimized)
       run: |
-        #!/bin/bash
-        # Initial input file
-        current_input="initial_resolvers.txt"
-        output_prefix="tested_resolvers_"
-        iteration=0
-        previous_line_count=-1
-        current_line_count=0
-
-        echo "Starting iterative dns resolver testing..."
-
-        while [[ "$iteration" -lt 10 ]]; do
-          iteration=$((iteration + 1))
-          output_file="${output_prefix}${iteration}.txt"
-
-          echo "--- Iteration $iteration ---"
-          echo "Running dnscheck on $current_input, output to $output_file"
-          dnscheck -l "$current_input" > "$output_file"
-
-          if [[ $? -ne 0 ]]; then
-            echo "dnscheck failed in iteration $iteration. Exiting."
-            exit 1
-          fi
-
-          current_line_count=$(wc -l < "$output_file")
-          echo "Number of working resolvers found: $current_line_count"
-
-          if [[ "$current_line_count" -eq "$previous_line_count" ]] && [[ "$iteration" -gt 1 ]]; then
-            echo "Line count is the same as the previous iteration. Assuming stability."
-            mv "$output_file" "resolvers.txt"
-            echo "Final working resolvers list saved to resolvers.txt"
-            exit 0
-          fi
-
-          previous_line_count="$current_line_count"
-          current_input="$output_file"
-        done
-
-        echo "Maximum iterations reached. Moving the result of the last run to resolvers.txt."
-        mv "${output_prefix}10.txt" "resolvers.txt"
+        "$(go env GOPATH)/bin/dnscheck" -l initial_resolvers.txt -r 100 -w 100 > resolvers.txt
         echo "Final working resolvers list saved to resolvers.txt"
-
-        # Optional: Clean up intermediate files
-        rm -f "${output_prefix}"* initial_resolvers.txt
+        
     - name: Run DNS Speed Check
       run: |
-        apk add --no-cache go
         ./measurements
         mv resolvers.cleaned resolvers.txt
+        
     - name: Commit results
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add measurements.txt faster-resolvers.txt resolvers.txt
-        if [ $(git status --porcelain=v1 2>/dev/null | wc -l) != "0" ]; then
-          git commit -m "Update DNS data" -a
-          git push "https://${GITHUB_ACTOR}:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:${GITHUB_REF} --follow-tags
-        fi
+      id: commit
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: Update DNS data (Optimized)
+        files: measurements.txt faster-resolvers.txt resolvers.txt
+        # Set the branch to push to, which is typically the default branch
+        branch: ${{ github.ref_name }}
+        
+    # --- New Steps for Tagging and Releasing ---
+    
+    - name: Get current date for versioning
+      id: date
+      run: echo "VERSION=$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
 
+    - name: Create Tag and Release
+      # Only run if a commit was actually made (i.e., files changed)
+      if: steps.commit.outputs.changes_detected == 'true'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ steps.date.outputs.VERSION }}
+        name: DNS Resolver List Update ${{ steps.date.outputs.VERSION }}
+        body: |
+          Automated update of the DNS resolver list.
+          - Updated resolvers.txt based on latest checks.
+          - Included speed measurements and faster-resolvers list.
+        files: |
+          resolvers.txt
+          measurements.txt
+          faster-resolvers.txt

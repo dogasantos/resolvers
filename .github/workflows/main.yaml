@@ -27,13 +27,17 @@ jobs:
     - name: Install necessary tools
       run: sudo apt-get update && sudo apt-get install -y curl git
       
-    - name: Install dnscheck (with custom modifications)
-      run: go install github.com/dogasantos/dnscheck/cmd/dnscheck@latest
-
-    - name: Verify dnscheck installation
+    - name: Build dnscheck from source (Bypassing Go Cache)
       run: |
-        if ! "$(go env GOPATH)/bin/dnscheck" -h | grep -q -- "-r"; then
-          echo "::error::The installed dnscheck binary does not support the required -r flag. Please ensure you have pushed the modified source code to your repository."
+        # Clone the repository to ensure we get the latest version with the -r and -w flags
+        git clone https://github.com/dogasantos/dnscheck.git
+        cd dnscheck
+        # Build the binary from the source code
+        go build -o ../dnscheck_bin ./cmd/dnscheck
+        cd ..
+        # Verify the binary was built correctly
+        if ! ./dnscheck_bin -h | grep -q -- "-r"; then
+          echo "::error::The locally built dnscheck binary does not support the required -r flag. Please check the source code in your repository."
           exit 1
         fi
       
@@ -51,7 +55,7 @@ jobs:
         
     - name: Run fast dnscheck (Optimized)
       run: |
-        "$(go env GOPATH)/bin/dnscheck" -l initial_resolvers.txt -r 100 -w 100 > resolvers.txt
+        ./dnscheck_bin -l initial_resolvers.txt -r 100 -w 100 > resolvers.txt
         echo "Final working resolvers list saved to resolvers.txt"
         
     - name: Run DNS Speed Check

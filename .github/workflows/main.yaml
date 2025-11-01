@@ -7,7 +7,7 @@ on:
 permissions:
   contents: write
   # Need to add 'releases: write' permission for creating a release
-  releases: write
+
 
 jobs:
   build:

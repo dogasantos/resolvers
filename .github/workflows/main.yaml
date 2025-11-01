@@ -5,9 +5,7 @@ on:
   schedule:
     - cron: "00 00 * * *"
 permissions:
-  contents: write  # Required to push changes and create releases
-
-
+  contents: write
 
 jobs:
   build:
@@ -24,6 +22,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.20'
+        cache: false
         
     - name: Install necessary tools
       run: sudo apt-get update && sudo apt-get install -y curl git
@@ -53,33 +52,53 @@ jobs:
         ./measurements
         mv resolvers.cleaned resolvers.txt
         
-    - name: Commit results
-      id: commit
-      uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        commit_message: Update DNS data (Optimized)
-        files: measurements.txt faster-resolvers.txt resolvers.txt
-        # Set the branch to push to, which is typically the default branch
-        branch: ${{ github.ref_name }}
-        
-    # --- New Steps for Tagging and Releasing ---
+    # --- Custom Logic for Versioning and Commit Check ---
     
     - name: Get current date for versioning
-      id: date
-      run: echo "VERSION=$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
+      id: version
+      run: echo "tag=v$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
+      
+    - name: Check for changes
+      id: git-check
+      run: |
+        # Configure git for the check
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # Add all files that might have changed
+        git add measurements.txt faster-resolvers.txt resolvers.txt
+        
+        # Check if there are any changes to commit
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "::notice::Changes detected. Proceeding with commit and release."
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "::notice::No changes detected. Skipping commit and release."
+        fi
+
+    - name: No changes detected
+      if: steps.git-check.outputs.changed == 'false'
+      run: |
+        echo "✓ No changes detected in resolver data. Skipping commit, tag, and release."
+        
+    - name: Commit and Push changes
+      if: steps.git-check.outputs.changed == 'true'
+      run: |
+        git commit -m "Update DNS data ${{ steps.version.outputs.tag }}"
+        git push "https://${GITHUB_ACTOR}:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:${GITHUB_REF} --follow-tags
 
     - name: Create Tag and Release
-      # Only run if a commit was actually made (i.e., files changed)
-      if: steps.commit.outputs.changes_detected == 'true'
+      if: steps.git-check.outputs.changed == 'true'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v${{ steps.date.outputs.VERSION }}
-        name: DNS Resolver List Update ${{ steps.date.outputs.VERSION }}
-        body: |
-          Automated update of the DNS resolver list.
-          - Updated resolvers.txt based on latest checks.
-          - Included speed measurements and faster-resolvers list.
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: DNS Resolver List Update ${{ steps.version.outputs.tag }}
+        # Assuming release_notes.md is generated or exists in the repo
+        body_path: release_notes.md
         files: |
           resolvers.txt
           measurements.txt
           faster-resolvers.txt
+        draft: false
+        prerelease: false

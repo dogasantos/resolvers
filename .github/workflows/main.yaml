@@ -5,8 +5,8 @@ on:
   schedule:
     - cron: "00 00 * * *"
 permissions:
-  contents: write
-  # Need to add 'releases: write' permission for creating a release
+  contents: write  # Required to push changes and create releases
+
 
 
 jobs:

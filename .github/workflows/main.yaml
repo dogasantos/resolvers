@@ -49,16 +49,15 @@ jobs:
 
     - name: Fetch initial resolver list
       run: |
-        curl -s https://raw.githubusercontent.com/blechschmidt/massdns/master/lists/resolvers.txt > initial_resolvers.txt
-        curl -s https://raw.githubusercontent.com/trickest/resolvers/refs/heads/main/resolvers.txt >> initial_resolvers.txt
-        curl -s https://raw.githubusercontent.com/blacklanternsecurity/public-dns-servers/refs/heads/master/nameservers.txt >> initial_resolvers.txt
-        cat initial_resolvers.txt |sort|uniq > initial_resolvers.1
-        mv initial_resolvers.1 initial_resolvers.txt
+        curl -s https://raw.githubusercontent.com/blechschmidt/massdns/master/lists/resolvers.txt > initial_resolvers.1
+        curl -s https://raw.githubusercontent.com/trickest/resolvers/refs/heads/main/resolvers.txt > initial_resolvers.2
+        curl -s https://raw.githubusercontent.com/blacklanternsecurity/public-dns-servers/refs/heads/master/nameservers.txt > initial_resolvers.3
+        cat initial_resolvers.1 initial_resolvers.2 initial_resolvers.3 | sort | uniq > initial_resolvers.txt
         echo "Initial list of resolvers fetched and deduplicated."
         
     - name: Run fast dnscheck (Optimized)
       run: |
-        ./dnscheck_bin -l initial_resolvers.txt -r 30 -w 200 > resolvers.txt
+        ./dnscheck_bin -l initial_resolvers.txt -r 40 -w 80 > resolvers.txt
         echo "Final working resolvers list saved to resolvers.txt"
         
     - name: Run DNS Speed Check
